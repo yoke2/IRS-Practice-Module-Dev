@@ -2,7 +2,6 @@
 """
 Date: 1/2/2020
 Team: Kenneth Goh (A0198544N) Raymond Ng (A0198543R) Wong Yoke Keong (A0195365U)
-
 Intelligent Robotic Systems Practice Module
 """
 
@@ -26,12 +25,12 @@ import cv2
 from airsim_env import Env, ACTION
 
 np.set_printoptions(suppress=True, precision=4)
-agent_name = 'rdqn'
+agent_name = 'dqn'
 
 class RDQNAgent(object):
-
+    
     def __init__(self, state_size, action_size, lr,
-                gamma, batch_size, memory_size,
+                gamma, batch_size, memory_size, 
                 epsilon, epsilon_end, decay_step, load_model):
         self.state_size = state_size
         self.vel_size = 3
@@ -54,27 +53,27 @@ class RDQNAgent(object):
         self.sess.run(tf.global_variables_initializer())
         if load_model:
             self.load_model('./save_model/'+ agent_name)
-
+        
         self.target_critic.set_weights(self.critic.get_weights())
 
         self.memory = deque(maxlen=self.memory_size)
 
     def build_model(self):
         # image process
-        image = Input(shape=self.state_size)
+        image = Input(shape=(224,352,3,))
         image_process = BatchNormalization()(image)
-        image_process = TimeDistributed(Conv2D(32, (8, 8), activation='elu', padding='same', kernel_initializer='he_normal'))(image_process)
-        image_process = TimeDistributed(MaxPooling2D((2, 2)))(image_process)
-        image_process = TimeDistributed(Conv2D(32, (5, 5), activation='elu', kernel_initializer='he_normal'))(image_process)
-        image_process = TimeDistributed(MaxPooling2D((2, 2)))(image_process)
-        image_process = TimeDistributed(Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal'))(image_process)
-        image_process = TimeDistributed(MaxPooling2D((2, 2)))(image_process)
-        image_process = TimeDistributed(Conv2D(8, (1, 1), activation='elu', kernel_initializer='he_normal'))(image_process)
-        image_process = TimeDistributed(Flatten())(image_process)
-        image_process = GRU(64, kernel_initializer='he_normal', use_bias=False)(image_process)
+        image_process = Conv2D(32, (8, 8), activation='elu', padding='same', kernel_initializer='he_normal')(image)
+        image_process = MaxPooling2D((2, 2))(image_process)
+        image_process = Conv2D(32, (5, 5), activation='elu', kernel_initializer='he_normal')(image_process)
+        image_process = MaxPooling2D((2, 2))(image_process)
+        image_process = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal')(image_process)
+        image_process = MaxPooling2D((2, 2))(image_process)
+        image_process = Conv2D(8, (1, 1), activation='elu', kernel_initializer='he_normal')(image_process)
+        image_process = Flatten()(image_process)
+        image_process = Dense(6, activation='elu')(image_process)
         image_process = BatchNormalization()(image_process)
         image_process = Activation('tanh')(image_process)
-
+        
         # vel process
         vel = Input(shape=[self.vel_size])
         vel_process = Dense(6, kernel_initializer='he_normal', use_bias=False)(vel)
@@ -112,7 +111,7 @@ class RDQNAgent(object):
         critic = Model(inputs=[image, vel], outputs=[Qvalue1, Qvalue2, Qvalue3])
 
         critic._make_predict_function()
-
+        
         return critic
 
     def build_critic_optimizer(self):
@@ -124,7 +123,7 @@ class RDQNAgent(object):
         y3 = K.placeholder(shape=(None, ), dtype='float32')
 
         pred1, pred2, pred3 = self.critic.output
-
+        
         # loss = K.mean(K.square(pred - y))
         # Huber Loss
         action_vec1 = K.one_hot(action1, self.action_size)
@@ -208,9 +207,9 @@ class RDQNAgent(object):
         critic_loss = self.critic_update(states + [actions1, actions2, actions3, targets1, targets2, targets3])
         return critic_loss[0]
 
-    def append_memory(self, state, action1, action2, action3, reward, next_state, done):
+    def append_memory(self, state, action1, action2, action3, reward, next_state, done):        
         self.memory.append((state, action1, action2, action3, reward, next_state, done))
-
+        
     def load_model(self, name):
         if os.path.exists(name + '.h5'):
             self.critic.load_weights(name + '.h5')
@@ -241,7 +240,7 @@ def transform_input(responses, img_height, img_width):
     return image
 
 def interpret_action(action):
-    scaling_factor = 0.01
+    scaling_factor = 0.1
     if action == 0:
         quad_offset = (0, 0, 0)
     elif action == 1:
@@ -251,12 +250,12 @@ def interpret_action(action):
     elif action == 3:
         quad_offset = (0, 0, scaling_factor)
     elif action == 4:
-        quad_offset = (-scaling_factor, 0, 0)
+        quad_offset = (-scaling_factor, 0, 0)    
     elif action == 5:
         quad_offset = (0, -scaling_factor, 0)
     elif action == 6:
         quad_offset = (0, 0, -scaling_factor)
-
+    
     return quad_offset
 
 if __name__ == '__main__':
@@ -273,7 +272,7 @@ if __name__ == '__main__':
     parser.add_argument('--img_width',  type=int,   default=352)
     parser.add_argument('--lr',         type=float, default=1e-4)
     parser.add_argument('--gamma',      type=float, default=0.99)
-    parser.add_argument('--seqsize',    type=int,   default=5)
+    parser.add_argument('--seqsize',    type=int,   default=1)
     parser.add_argument('--epoch',      type=int,   default=5)
     parser.add_argument('--batch_size', type=int,   default=32)
     parser.add_argument('--memory_size',type=int,   default=10000)
@@ -294,7 +293,7 @@ if __name__ == '__main__':
         os.makedirs('save_model')
 
     # Make RL agent
-    state_size = [args.seqsize, args.img_height, args.img_width, 3]
+    state_size = [args.img_height, args.img_width, 3] #[args.seqsize, args.img_height, args.img_width, 3]
     action_size = 7
     agent = RDQNAgent(
         state_size=state_size,
@@ -307,7 +306,7 @@ if __name__ == '__main__':
         epsilon_end=args.epsilon_end,
         decay_step=args.decay_step,
         load_model=args.load_model
-    )
+    )  
 
     episode = 0
     env = Env()
@@ -320,24 +319,20 @@ if __name__ == '__main__':
                 # stats
                 bestReward, timestep, score, avgQ = 0., 0, 0., 0.
                 observe = env.reset()
+                print(observe[1])
                 image, vel = observe
                 vel = np.array(vel)
                 try:
                     image = transform_input(image, args.img_height, args.img_width)
                 except:
                     continue
-                history = np.stack([image] * args.seqsize, axis=1)
+                #history = np.stack([image] * args.seqsize, axis=1)
                 vel = vel.reshape(1, -1)
-                state = [history, vel]
+                state = [image, vel]
                 while not done:
                     timestep += 1
-                    # predstart = time.time()
+                    
                     Qs1, Qs2, Qs3 = agent.critic.predict(state)
-                    # predend = time.time()
-                    # total_time = predend - predstart
-                    # with open('rdqn_predtime.txt', 'a') as txtfile:
-                    #     txtfile.write(" ".join(str(total_time)) + '\n')
-
                     action1, action2, action3 = np.argmax(Qs1), np.argmax(Qs2), np.argmax(Qs3)
                     Qmax1, Qmax2, Qmax3 = np.amax(Qs1), np.amax(Qs2), np.amax(Qs3)
                     real_action1, real_action2, real_action3 = interpret_action(action1), interpret_action(action2), interpret_action(action3)
@@ -350,9 +345,9 @@ if __name__ == '__main__':
                         print('BUG')
                         bug = True
                         break
-                    history = np.append(history[:, 1:], [image], axis=1)
+                    #history = np.append(history[:, 1:], [image], axis=1)
                     vel = vel.reshape(1, -1)
-                    next_state = [history, vel]
+                    next_state = [image, vel]
                     reward = np.sum(np.array(reward))
                     info1, info2, info3 = info[0]['status'], info[1]['status'], info[2]['status']
 
@@ -372,11 +367,10 @@ if __name__ == '__main__':
 
                 if bug:
                     continue
-
+                
                 avgQ /= timestep
 
                 # done
-
                 print('Ep %d: BestReward %.3f Step %d Score %.2f AvgQ %.2f Info1 %s Info2 %s Info3 %s'
                         % (episode, bestReward, timestep, score, avgQ, info1, info2, info3))
 
@@ -409,7 +403,7 @@ if __name__ == '__main__':
                 # stats
                 bestReward, timestep, score, avgQ = 0., 0, 0., 0.
                 train_num, loss = 0, 0.
-
+                
                 observe = env.reset()
                 image, vel = observe
                 vel = np.array(vel)
@@ -417,9 +411,14 @@ if __name__ == '__main__':
                     image = transform_input(image, args.img_height, args.img_width)
                 except:
                     continue
-                history = np.stack([image] * args.seqsize, axis=1)
+                #history = np.stack([image] * args.seqsize, axis=1)
+                #print(history.shape)
+                #history = np.stack([image], axis=1) 
                 vel = vel.reshape(1, -1)
-                state = [history, vel]
+                #print(history.shape)
+                print(image.shape)
+                print(vel.shape)
+                state = [image, vel]
                 print(f'Main Loop: done: {done}, timestep: {timestep}, time_limit: {time_limit}')
                 while not done and timestep < time_limit:
                     print(f'Sub Loop: timestep: {timestep}, global_step: {global_step}')
@@ -453,9 +452,9 @@ if __name__ == '__main__':
                         print('BUG')
                         bug = True
                         break
-                    history = np.append(history[:, 1:], [image], axis=1)
+                    #history = np.append(history[:, 1:], [image], axis=1)
                     vel = vel.reshape(1, -1)
-                    next_state = [history, vel]
+                    next_state = [image, vel]
                     reward = np.sum(np.array(reward))
                     agent.append_memory(state, action1, action2, action3, reward, next_state, done)
 
